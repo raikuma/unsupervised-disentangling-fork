@@ -14,6 +14,7 @@ from utils import (
     initialize_uninitialized,
 )
 import tensorflow as tf
+import time
 
 
 def main(arg):
@@ -91,6 +92,8 @@ def main(arg):
             saver.restore(sess, ckpt)
 
         initialize_uninitialized(sess)
+        # start timer for CLI progress
+        start_time = time.time()
         if arg.num_steps == -1:
             while True:
                 try:
@@ -110,8 +113,29 @@ def main(arg):
                         if np.mod(ctr, arg.summary_interval) == 0:
                             merged_summary = sess.run(merged, feed_dict=trf)
                             writer.add_summary(merged_summary, global_step=ctr)
-
+                        # run optimization and fetch loss
                         _, loss = sess.run([model.optimize, model.loss], feed_dict=trf)
+                        # CLI progress print
+                        if np.mod(ctr, arg.print_interval) == 0:
+                            elapsed = time.time() - start_time
+                            steps_done = max(1, ctr)
+                            steps_per_sec = steps_done / elapsed if elapsed > 0 else float("inf")
+                            if arg.num_steps > 0:
+                                remaining = max(0, arg.num_steps - ctr)
+                                eta = remaining / steps_per_sec if steps_per_sec > 0 else float("inf")
+                                eta_str = "ETA: {:.1f}s".format(eta)
+                            else:
+                                eta_str = ""
+                            try:
+                                loss_val = float(np.asarray(loss))
+                                loss_str = "loss={:.6f}".format(loss_val)
+                            except Exception:
+                                loss_str = "loss={}".format(loss)
+                            print(
+                                "Step {} | {} | {:.2f} step/s {}".format(
+                                    ctr, loss_str, steps_per_sec, eta_str
+                                )
+                            )
                         if np.mod(ctr, arg.save_interval) == 0:
                             saver.save(
                                 sess,
@@ -156,8 +180,29 @@ def main(arg):
                         if np.mod(ctr, arg.summary_interval) == 0:
                             merged_summary = sess.run(merged, feed_dict=trf)
                             writer.add_summary(merged_summary, global_step=ctr)
-
+                        # run optimization and fetch loss
                         _, loss = sess.run([model.optimize, model.loss], feed_dict=trf)
+                        # CLI progress print
+                        if np.mod(ctr, arg.print_interval) == 0:
+                            elapsed = time.time() - start_time
+                            steps_done = max(1, ctr)
+                            steps_per_sec = steps_done / elapsed if elapsed > 0 else float("inf")
+                            if arg.num_steps > 0:
+                                remaining = max(0, arg.num_steps - ctr)
+                                eta = remaining / steps_per_sec if steps_per_sec > 0 else float("inf")
+                                eta_str = "ETA: {:.1f}s".format(eta)
+                            else:
+                                eta_str = ""
+                            try:
+                                loss_val = float(np.asarray(loss))
+                                loss_str = "loss={:.6f}".format(loss_val)
+                            except Exception:
+                                loss_str = "loss={}".format(loss)
+                            print(
+                                "Step {} | {} | {:.2f} step/s {}".format(
+                                    ctr, loss_str, steps_per_sec, eta_str
+                                )
+                            )
                         if np.mod(ctr, arg.save_interval) == 0:
                             saver.save(
                                 sess,

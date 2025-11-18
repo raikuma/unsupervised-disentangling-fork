@@ -194,6 +194,13 @@ def parse_args():
     )
 
     parser.add_argument(
+        "--print_interval",
+        default=100,
+        type=int,
+        help="prints training progress to the CLI every n gradient steps",
+    )
+
+    parser.add_argument(
         "--static", action="store_true"
     )  # for e.g.birds (inter-species reconstruction too difficult)
     parser.add_argument(
