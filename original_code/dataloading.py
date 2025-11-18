@@ -221,6 +221,44 @@ def load_test_from_csv_static(
     )
     return raw_dataset
 
+def load_train_cub(
+    arg,
+    data_root="custom_datasets/cub_200_2011",
+    data_csv="custom_datasets/cub_200_2011/train.csv",
+    id_col_name="idx",
+    fname_col_name="fname",
+):
+    # frames = glob.glob(path + "*.jpg", recursive=True)
+    import pandas as pd
+
+    data_frame = pd.read_csv(data_csv)
+    abs_paths = data_frame[fname_col_name].apply(lambda x: os.path.join(data_root, x))
+    frames = np.asarray(abs_paths).reshape(-1, 1)
+    raw_dataset = (
+        tf.data.Dataset.from_tensor_slices(frames)
+        .flat_map(lambda x: tf.data.Dataset.from_tensor_slices(x))
+        .shuffle(arg.n_shuffle, reshuffle_each_iteration=True)
+    )
+    return raw_dataset
+
+def load_test_cub(    
+    arg,
+    data_root="custom_datasets/cub_200_2011",
+    data_csv="custom_datasets/cub_200_2011/data_test.csv",
+    id_col_name="idx",
+    fname_col_name="filename",    
+):
+    # frames = glob.glob(path + "*.jpg", recursive=True)
+    import pandas as pd
+
+    data_frame = pd.read_csv(data_csv)
+    abs_paths = data_frame[fname_col_name].apply(lambda x: os.path.join(data_root, x))
+    frames = np.asarray(abs_paths).reshape(-1, 1)
+    raw_dataset = tf.data.Dataset.from_tensor_slices(frames).flat_map(
+        lambda x: tf.data.Dataset.from_tensor_slices(x)
+    )
+    return raw_dataset
+    
 
 import functools
 
@@ -248,12 +286,14 @@ dataset_map_train = {
     "human3m": load_train_human3m,
     "csv": load_train_from_csv_nonstatic,
     "deepfashion": load_train_from_csv_static,
+    "cub": load_train_cub,
 }
 dataset_map_test = {
     "generic": load_test_generic,
     "human3m": load_test_human3m,
     "csv": load_test_from_csv_nonstatic,
     "deepfashion": load_test_from_csv_static,
+    "cub": load_test_cub,
 }
 
 
