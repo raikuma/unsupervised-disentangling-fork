@@ -244,7 +244,7 @@ def load_train_cub(
 def load_test_cub(    
     arg,
     data_root="custom_datasets/cub_200_2011",
-    data_csv="custom_datasets/cub_200_2011/data_test.csv",
+    data_csv="custom_datasets/cub_200_2011/test.csv",
     id_col_name="idx",
     fname_col_name="filename",    
 ):
