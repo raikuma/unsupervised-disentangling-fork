@@ -246,7 +246,7 @@ def load_test_cub(
     data_root="custom_datasets/cub_200_2011",
     data_csv="custom_datasets/cub_200_2011/test.csv",
     id_col_name="idx",
-    fname_col_name="filename",    
+    fname_col_name="fname",    
 ):
     # frames = glob.glob(path + "*.jpg", recursive=True)
     import pandas as pd
