@@ -31,14 +31,9 @@ def main(arg):
         dataset = raw_dataset.map(
             load_and_preprocess_image, num_parallel_calls=arg.data_parallel_calls
         )
-        # For training we repeat for epochs; for predict we want a single pass
+        # Batch handling: train uses repeat; predict pads last batch if needed
         if arg.mode == "train":
             dataset = dataset.batch(arg["bn"], drop_remainder=True).repeat(arg.epochs)
-        else:
-            dataset = dataset.batch(arg["bn"], drop_remainder=True)
-        # Batch handling: keep valid count and pad last batch up to `arg.bn` if needed
-        if arg.mode == "train":
-            dataset = dataset.batch(arg["bn"], drop_remainder=True)
             dataset = dataset.map(lambda batch: (batch, tf.constant(arg["bn"], dtype=tf.int32)))
         else:
             dataset = dataset.batch(arg["bn"], drop_remainder=False)
