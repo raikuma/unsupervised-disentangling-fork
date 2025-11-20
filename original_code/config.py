@@ -154,6 +154,13 @@ def parse_args():
         help="sensible shedule [0.0, 1.]",
     )
 
+    parser.add_argument(
+        "--coord_jitter",
+        default=0.2,
+        type=float,
+        help="control-point jitter magnitude for TPS (use 0 to disable)",
+    )
+
     # appearance parameters
     parser.add_argument(
         "--contrast_var", default=0.5, type=float, help="contrast variation"

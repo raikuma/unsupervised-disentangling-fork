@@ -16,7 +16,16 @@ def tf_rotation_mat(rotation):
     return mat
 
 
-def tps_parameters(batch_size, scal, tps_scal, rot_scal, off_scal, scal_var, rescal=1):
+def tps_parameters(
+    batch_size,
+    scal,
+    tps_scal,
+    rot_scal,
+    off_scal,
+    scal_var,
+    rescal=1,
+    coord_jitter=0.2,
+):
     coord = tf.constant(
         [
             [
@@ -35,7 +44,8 @@ def tps_parameters(batch_size, scal, tps_scal, rot_scal, off_scal, scal_var, res
 
     coord = tf.tile(coord, [batch_size, 1, 1])
     shape = coord.get_shape()
-    coord = coord + tf.random_uniform(shape=shape, minval=-0.2, maxval=0.2)
+    # coord_jitter can be a float or a scalar tensor/placeholder
+    coord = coord + tf.random_uniform(shape=shape, minval=-coord_jitter, maxval=coord_jitter)
     vector = tf.random_uniform(
         shape=shape, minval=-tps_scal, maxval=tps_scal, dtype=tf.float32
     )

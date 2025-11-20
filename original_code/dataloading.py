@@ -297,5 +297,8 @@ dataset_map_test = {
 }
 
 
-keypoint_files_map = {"deepfashion": "datasets/deepfashion/data_test.json"}
+keypoint_files_map = {
+    "deepfashion": "datasets/deepfashion/data_test.json",
+    "cub": "custom_datasets/cub_200_2011/test_kp.npy",
+}
 

@@ -41,10 +41,29 @@ def main(arg):
         dataset = raw_dataset.map(
             load_and_preprocess_image, num_parallel_calls=arg.data_parallel_calls
         )
-        dataset = dataset.batch(arg["bn"], drop_remainder=True)
+        # allow last smaller batch but pad it up to arg.bn and return valid count
+        dataset = dataset.batch(arg["bn"], drop_remainder=False)
+
+        def _pad_batch(batch):
+            m = tf.shape(batch)[0]
+            valid = tf.identity(m)
+
+            def _pad():
+                repeats = arg["bn"] - m
+                last = batch[-1:]
+                padding = tf.tile(last, [repeats, 1, 1, 1])
+                batch_padded = tf.concat([batch, padding], axis=0)
+                return batch_padded, valid
+
+            def _nopad():
+                return batch, valid
+
+            return tf.cond(tf.less(m, arg["bn"]), _pad, _nopad)
+
+        dataset = dataset.map(_pad_batch)
         iterator = dataset.make_one_shot_iterator()
         next_element = iterator.get_next()
-        b_images = next_element
+        b_images, valid_count = next_element
 
         orig_images = tf.tile(b_images, [2, 1, 1, 1])
 
@@ -62,9 +81,10 @@ def main(arg):
         augm_scal = tf.placeholder(
             dtype=tf.float32, shape=(), name="augm_scal_placeholder"
         )
+        coord_jitter = tf.placeholder(dtype=tf.float32, shape=(), name="coord_jitter_placeholder")
 
         tps_param_dic = tps_parameters(
-            2 * arg.bn, scal, tps_scal, rot_scal, off_scal, scal_var
+            2 * arg.bn, scal, tps_scal, rot_scal, off_scal, scal_var, rescal=1, coord_jitter=coord_jitter
         )
         tps_param_dic.augm_scal = augm_scal
 
@@ -90,9 +110,15 @@ def main(arg):
                     feed = transformation_parameters(
                         arg, ctr, no_transform=True
                     )  # no transform if arg.visualize
+                    # When no_transform=True we still used the configured `scal`
+                    # (default 0.8) which applies a zoom in the TPS transform
+                    # and results in a cropped visualization. Force scal=1.0
+                    # here so the visualized image is the full original.
+                    feed.scal = 1.0
                     trf = {
                         scal: feed.scal,
                         tps_scal: feed.tps_scal,
+                        coord_jitter: 0.0,
                         scal_var: feed.scal_var,
                         rot_scal: feed.rot_scal,
                         off_scal: feed.off_scal,
@@ -100,24 +126,26 @@ def main(arg):
                     }
                     ctr += 1
 
-                    img, img_rec, mu, heat_raw = sess.run(
+                    img, img_rec, mu, heat_raw, valid = sess.run(
                         [
                             model.image_in,
                             model.reconstruct_same_id,
                             model.mu,
                             batch_colour_map(model.part_maps),
+                            valid_count,
                         ],
                         feed_dict=trf,
                     )
-                    save(img[: arg.bn, ...], mu[: arg.bn, ...], ctr, model_save_dir)
-                    mu_list.append(mu[: arg.bn, ...])
+                    v = int(valid)
+                    save(img[:v, ...], mu[:v, ...], ctr, model_save_dir)
+                    mu_list.append(mu[:v, ...])
                 except tf.errors.OutOfRangeError:
                     print("End of Prediction")
                     break
             print("Saving outputs")
             mu_list = np.concatenate(mu_list, axis=0)
             np.savez_compressed(
-                os.path.join(model_save_dir, "keypoints_predicted.npz"),
+                os.path.join(model_save_dir, "keypoints_predicted_test.npz"),
                 keypoints_predicted=mu_list,
             )
 
@@ -179,6 +207,72 @@ def main(arg):
             pck_value = pck(distances, arg.pck_tolerance, arg.in_dim)
             with open(os.path.join(model_save_dir, "metrics.txt"), "w") as f:
                 print(f"pck : {100 * pck_value: .0f}%", file=f)
+
+        if arg.dataset in ["cub"]:
+            # regress to keypoints
+            with np.load(
+                os.path.join(model_save_dir, "keypoints_predicted.npz")
+            ) as data:
+                keypoints_predicted = data["keypoints_predicted"] # (N', 10, 2)
+            gt_keypoints_data = np.load(keypoint_files_map[arg.dataset]) # (N, 15, 3)
+            
+            # TODO: filter failed detections
+            train_X = keypoints_predicted * 0.5 + 0.5
+            train_y = gt_keypoints_data[:, :, :2][:train_X.shape[0], ...]
+            visibility = gt_keypoints_data[:, :, -1][:train_X.shape[0], ...]
+            # train_X = torch.cat([batch['det_keypoints'] for batch in batch_list]) * 0.5 + 0.5
+            # train_y = torch.cat([batch['keypoints'] for batch in batch_list])
+            # visibility = torch.cat([batch['visibility'] for batch in batch_list])
+
+            scores = []
+            num_gnd_kp = 15
+            betas = []
+            for i in range(num_gnd_kp):
+                # index = visibility[:, i].bool()
+                index = visibility[:, i].astype(bool)
+                if index.sum() == 0:
+                    betas.append(np.zeros(2*train_X.shape[1], 2))
+                    continue
+                features = train_X[index]
+                features = features.reshape(features.shape[0], -1)
+                label = train_y[index, i]
+                try:
+                    # beta = (features.T @ features).inverse() @ features.T @ label
+                    beta = np.linalg.inv(features.T @ features) @ features.T @ label
+                except:
+                    # beta = (features.T @ features + np.eye(features.shape[-1]).to(features)).inverse() @ features.T @ label
+                    beta = np.linalg.inv(features.T @ features + np.eye(features.shape[-1])) @ features.T @ label
+                betas.append(beta)
+
+                pred_label = features @ beta
+                # score = (pred_label - label).norm(dim=-1).sum()
+                score = np.linalg.norm(pred_label - label, axis=-1).sum()
+                scores.append(score.item())
+
+            print('val_loss', np.sum(scores) / visibility.sum().item())
+
+            landmarks_gt = train_y
+            landmarks_regressed = np.zeros_like(landmarks_gt)
+            for i in range(num_gnd_kp):
+                features = train_X.reshape(train_X.shape[0], -1)
+                beta = betas[i]
+                pred_label = features @ beta
+                landmarks_regressed[:, i, :] = pred_label
+            distances = np.linalg.norm(landmarks_gt - landmarks_regressed, axis=-1)
+
+            # apply visibility mask
+            distances = distances * visibility
+
+            np.savez_compressed(
+                os.path.join(model_save_dir, "keypoints_regressed.npz"),
+                regressed_keypoints=landmarks_regressed,
+                distances=distances,
+            )
+
+            pck_value = pck(distances, arg.pck_tolerance, arg.in_dim)
+            with open(os.path.join(model_save_dir, "metrics.txt"), "w") as f:
+                print(f"pck : {100 * pck_value: .0f}%", file=f)
+                print(f"pck : {100 * pck_value: .0f}%")
 
 
 if __name__ == "__main__":
